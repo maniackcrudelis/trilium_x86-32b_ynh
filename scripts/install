@@ -1,0 +1,233 @@
+#!/bin/bash
+
+#=================================================
+# GENERIC STARTING
+#=================================================
+# IMPORT GENERIC HELPERS
+#=================================================
+
+# Load common variables for all scripts.
+source _variables
+
+source _common.sh
+source /usr/share/yunohost/helpers
+
+#=================================================
+# MANAGE FAILURE OF THE SCRIPT
+#=================================================
+
+ynh_clean_setup () {
+# Clean installation remainings that are not handled by the remove script.
+    ynh_clean_check_starting
+}
+# Exit if an error occurs during the execution of the script
+ynh_abort_if_errors
+
+#=================================================
+# RETRIEVE ARGUMENTS FROM THE MANIFEST
+#=================================================
+
+domain=$YNH_APP_ARG_DOMAIN
+path_url=$YNH_APP_ARG_PATH
+is_public=$YNH_APP_ARG_IS_PUBLIC
+
+app=$YNH_APP_INSTANCE_NAME
+
+#=================================================
+# CHECK IF THE APP CAN BE INSTALLED WITH THIS ARGS
+#=================================================
+ynh_script_progression --message="Validating installation parameters..."
+
+final_path=/var/www/$app
+test ! -e "$final_path" || ynh_die "This path already contains a folder"
+
+# Register (book) web path
+ynh_webpath_register --app=$app --domain=$domain --path_url=$path_url
+
+#=================================================
+# STORE SETTINGS FROM MANIFEST
+#=================================================
+ynh_script_progression --message="Storing installation settings..." --weight=2
+
+ynh_app_setting_set --app=$app --key=domain --value=$domain
+ynh_app_setting_set --app=$app --key=path --value=$path_url
+ynh_app_setting_set --app=$app --key=is_public --value=$is_public
+ynh_app_setting_set --app=$app --key=overwrite_settings --value="1"
+ynh_app_setting_set --app=$app --key=overwrite_nginx --value="1"
+ynh_app_setting_set --app=$app --key=overwrite_systemd --value="1"
+
+#=================================================
+# STANDARD MODIFICATIONS
+#=================================================
+# FIND AND OPEN A PORT
+#=================================================
+ynh_script_progression --message="Configuring firewall..."
+
+# Find a free port
+port=$(ynh_find_port --port=8080)
+ynh_app_setting_set --app=$app --key=port --value=$port
+
+#=================================================
+# INSTALL DEPENDENCIES
+#=================================================
+ynh_script_progression --message="Installing dependencies..." --weight=24
+
+ynh_install_app_dependencies $app_depencencies
+
+#=================================================
+# INSTALL NODEJS
+#=================================================
+ynh_script_progression --message="Installing NodeJS..." --weight=6
+
+if [ "$(ynh_detect_arch)" == "i386" ]
+then
+    #Install nodejs 10 from https://unofficial-builds.nodejs.org/ as nodejs does not support 32 bits anymore...
+    ynh_setup_source --source_id=node32b --dest_dir="$final_path/node_bin"
+    nodejs_path="$final_path/node_bin/bin"
+else
+    # Use regular nodejs installation
+    ynh_install_nodejs --nodejs_version=$nodejs_version
+fi
+
+#=================================================
+# DOWNLOAD, CHECK AND UNPACK SOURCE
+#=================================================
+ynh_script_progression --message="Setting up source files..." --weight=5
+
+ynh_app_setting_set --app=$app --key=final_path --value=$final_path
+# Download, check integrity, uncompress and patch the source from app.src
+ynh_setup_source --dest_dir="$final_path"
+
+#=================================================
+# NGINX CONFIGURATION
+#=================================================
+ynh_script_progression --message="Configuring nginx web server..." --weight=4
+
+# Create a dedicated nginx config
+ynh_add_nginx_config
+
+#=================================================
+# CREATE DEDICATED USER
+#=================================================
+ynh_script_progression --message="Configuring system user..." --weight=3
+
+# Create a dedicated system user
+ynh_system_user_create --username=$app --home_dir=$final_path
+
+#=================================================
+# SPECIFIC SETUP
+#=================================================
+# INSTALL TRILIUM
+#=================================================
+ynh_script_progression --message="Installing Trilium..." --weight=42
+
+# Install dependencies and proceed to the installation
+if [ "$(ynh_detect_arch)" != "i386" ]
+then
+    ynh_use_nodejs
+fi
+(
+    cd "$final_path"
+    chown -R $app: "$final_path"
+    ynh_exec_warn_less ynh_exec_as $app PATH="$nodejs_path:$PATH" "$nodejs_path/npm" install
+)
+
+#=================================================
+# CONFIGURE TRILIUM
+#=================================================
+ynh_script_progression --message="Configuring Trilium..." --weight=5
+
+# Create the directory for data
+data_dir="/home/yunohost.app/$app"
+ynh_app_setting_set --app=$app --key=data_dir --value=$data_dir
+mkdir -p $data_dir
+
+cp ../conf/config.ini $data_dir/config.ini
+
+ynh_replace_string --match_string="__PORT__" --replace_string="$port" --target_file="$data_dir/config.ini"
+
+# Calculate and store the config file checksum into the app settings
+ynh_store_file_checksum --file="$data_dir/config.ini"
+
+#=================================================
+# SECURING FILES AND DIRECTORIES
+#=================================================
+
+# Set files ownership to Trilium
+chown -R $app: $final_path
+chown -R $app: $data_dir
+
+#=================================================
+# SETUP SYSTEMD
+#=================================================
+ynh_script_progression --message="Configuring a systemd service..." --weight=2
+
+ynh_replace_string --match_string="__NODE_PATH__" --replace_string="$nodejs_path" --target_file="../conf/systemd.service"
+ynh_replace_string --match_string="__DATA_DIR__" --replace_string="$data_dir" --target_file="../conf/systemd.service"
+# Create a dedicated systemd config
+ynh_add_systemd_config
+
+#=================================================
+# ADVERTISE SERVICE IN ADMIN PANEL
+#=================================================
+
+yunohost service add $app --description "Trilium Notes, a hierarchical note taking application"
+
+#=================================================
+# SETUP FAIL2BAN
+#=================================================
+# ynh_script_progression --message="Configuring fail2ban..." --weight=13 --time
+
+# No support yet for fail2ban. Failed logins aren't logged as such.
+
+# Create a dedicated fail2ban config
+# ynh_add_fail2ban_config --logpath="/var/log/nginx/$domain-access.log" --failregex="<HOST> .* .POST /mypads/api/auth/login HTTP/1.1. 400" --max_retry=5
+
+#=================================================
+# SETUP SSOWAT
+#=================================================
+ynh_script_progression --message="Configuring SSOwat..."
+
+if [ $is_public -eq 1 ]; then
+    ynh_app_setting_set --app=$app --key=skipped_uris --value="/"
+fi
+
+#=================================================
+# RELOAD NGINX
+#=================================================
+ynh_script_progression --message="Reloading nginx web server..."
+
+ynh_systemd_action --action=reload --service_name=nginx
+
+#=================================================
+# CHECK TRILIUM STARTING
+#=================================================
+ynh_script_progression --message="Restarting Trilium..." --weight=5
+
+log_file="$data_dir/log/trilium-$(date '+%F').log"
+# Wait for trilium to be fully started
+ynh_systemd_action --action=restart --line_match="Listening on port" --log_path="$log_file" --timeout="300"
+
+#=================================================
+# SEND A README FOR THE ADMIN
+#=================================================
+
+# Get main domain and buid the url of the admin panel of the app.
+admin_panel="https://$(grep portal_domain /etc/ssowat/conf.json | cut -d'"' -f4)/yunohost/admin/#/apps/$app"
+
+echo "Your data are stored in $data_dir
+They won't be deleted if you remove the app.
+
+After the installation, at the first start, Trilium will ask you to set an username and a password to log in Trilium.
+You may go back to the YNH portal after you've validated. This is normal, by returning to the app it should work.
+
+You can configure this app easily by using the experimental config-panel feature $admin_panel/config-panel.
+You can also find some specific actions for this app by using the experimental action feature $admin_panel/actions." > mail_to_send
+
+ynh_send_readme_to_admin --app_message="mail_to_send" --recipients="root" --type=install
+
+#=================================================
+# END OF SCRIPT
+#=================================================
+
+ynh_script_progression --message="Installation of $app completed" --last

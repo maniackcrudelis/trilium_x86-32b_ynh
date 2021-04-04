@@ -1,0 +1,6 @@
+SOURCE_URL=https://unofficial-builds.nodejs.org/download/release/v10.24.0/node-v10.24.0-linux-x86.tar.gz
+SOURCE_SUM=eecf780a80438131a71d7fc84b21650e
+SOURCE_SUM_PRG=md5sum
+ARCH_FORMAT=tar.gz
+SOURCE_IN_SUBDIR=true
+SOURCE_FILENAME=

@@ -1,0 +1,37 @@
+version = "0.1"
+name = "Trilium configuration panel"
+
+[main]
+name = "Trilium configuration"
+
+
+    [main.is_public]
+    name = "Public access"
+
+        [main.is_public.is_public]
+        ask = "Is it a public website?"
+        type = "boolean"
+        default = true
+        help = "If your trilium instance is not public, you won't be able to synchronize with a desktop instance."
+
+
+    [main.overwrite_files]
+    name = "Overwriting config files during an upgrade"
+
+        [main.overwrite_files.overwrite_settings]
+        ask = "Overwrite the config file config.ini ?"
+        type = "boolean"
+        default = true
+        help = "If the file is overwritten, a backup will be created."
+
+        [main.overwrite_files.overwrite_nginx]
+        ask = "Overwrite the nginx config file ?"
+        type = "boolean"
+        default = true
+        help = "If the file is overwritten, a backup will be created."
+
+        [main.overwrite_files.overwrite_systemd]
+        ask = "Overwrite the systemd config file ?"
+        type = "boolean"
+        default = true
+        help = "If the file is overwritten, a backup will be created."

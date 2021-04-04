@@ -1,0 +1,159 @@
+#!/bin/bash
+
+#=================================================
+# GENERIC START
+#=================================================
+# IMPORT GENERIC HELPERS
+#=================================================
+
+# Load common variables for all scripts.
+source ../settings/scripts/_variables
+
+source ../settings/scripts/_common.sh
+source /usr/share/yunohost/helpers
+
+#=================================================
+# MANAGE SCRIPT FAILURE
+#=================================================
+
+ynh_clean_setup () {
+# Clean installation remainings that are not handled by the remove script.
+    ynh_clean_check_starting
+}
+# Exit if an error occurs during the execution of the script
+ynh_abort_if_errors
+
+#=================================================
+# LOAD SETTINGS
+#=================================================
+ynh_script_progression --message="Loading settings.." --weight=4
+
+app=$YNH_APP_INSTANCE_NAME
+
+domain=$(ynh_app_setting_get --app=$app --key=domain)
+path_url=$(ynh_app_setting_get --app=$app --key=path)
+final_path=$(ynh_app_setting_get --app=$app --key=final_path)
+data_dir=$(ynh_app_setting_get --app=$app --key=data_dir)
+
+#=================================================
+# CHECK IF THE APP CAN BE RESTORED
+#=================================================
+ynh_script_progression --message="Validating restoration parameters..." --weight=3
+
+ynh_webpath_available --domain=$domain --path_url=$path_url \
+    || ynh_die --message="Path not available: ${domain}${path_url}"
+test ! -d $final_path \
+    || ynh_die --message="There is already a directory: $final_path "
+
+#=================================================
+# ACTIVATE MAINTENANCE MODE
+#=================================================
+ynh_script_progression --message="Activating maintenance mode..." --weight=3
+
+ynh_maintenance_mode_ON
+
+#=================================================
+# STANDARD RESTORE STEPS
+#=================================================
+# RESTORE THE NGINX CONFIGURATION
+#=================================================
+
+ynh_restore_file --origin_path="/etc/nginx/conf.d/$domain.d/$app.conf"
+
+#=================================================
+# RESTORE THE APP MAIN DIR
+#=================================================
+ynh_script_progression --message="Restoring the app main directory..."
+
+ynh_restore_file --origin_path="$final_path"
+ynh_restore_file --origin_path="$data_dir"
+
+#=================================================
+# RECREATE THE DEDICATED USER
+#=================================================
+ynh_script_progression --message="Recreating the dedicated system user..." --weight=2
+
+# Create the dedicated user (if not existing)
+ynh_system_user_create --username=$app --home_dir=$final_path
+
+#=================================================
+# SPECIFIC RESTORE
+#=================================================
+# INSTALL DEPENDENCIES
+#=================================================
+ynh_script_progression --message="Reinstalling dependencies..." --weight=38
+
+ynh_install_app_dependencies $app_depencencies
+
+#=================================================
+# INSTALL NODEJS
+#=================================================
+
+# Does not reinstall node if it was installed for i386.
+# It this case, node is already installed into trilium directory.
+if [ "$(ynh_detect_arch)" != "i386" ]
+then
+    ynh_script_progression --message="Reinstalling NodeJS..." --weight=12
+
+    ynh_install_nodejs --nodejs_version=$nodejs_version
+fi
+
+#=================================================
+# RESTORE USER RIGHTS
+#=================================================
+
+# Restore permissions on app files
+chown -R $app: $final_path
+chown -R $app: $data_dir
+
+#=================================================
+# ADVERTISE SERVICE IN ADMIN PANEL
+#=================================================
+
+yunohost service add $app --description "Trilium Notes, a hierarchical note taking application"
+
+#=================================================
+# RESTORE SYSTEMD
+#=================================================
+ynh_script_progression --message="Restoring the systemd configuration..." --weight=2
+
+ynh_restore_file --origin_path="/etc/systemd/system/$app.service"
+systemctl enable $app.service
+
+#=================================================
+# RESTORE FAIL2BAN CONFIGURATION
+#=================================================
+# ynh_script_progression --message="Restoring the fail2ban configuration..." --weight=6 --time
+
+# ynh_restore_file "/etc/fail2ban/jail.d/$app.conf"
+# ynh_restore_file "/etc/fail2ban/filter.d/$app.conf"
+# ynh_systemd_action --action=restart --service_name=fail2ban
+
+#=================================================
+# RELOAD NGINX
+#=================================================
+ynh_script_progression --message="Reloading nginx web server..."
+
+ynh_systemd_action --action=reload --service_name=nginx
+
+#=================================================
+# CHECK TRILIUM STARTING
+#=================================================
+ynh_script_progression --message="Restarting Trilium..." --weight=5
+
+log_file="$data_dir/log/trilium-$(date '+%F').log"
+# Wait for trilium to be fully started
+ynh_systemd_action --action=restart --line_match="Listening on port" --log_path="$log_file" --timeout="300"
+
+#=================================================
+# DEACTIVE MAINTENANCE MODE
+#=================================================
+ynh_script_progression --message="Disabling maintenance mode..." --weight=5
+
+ynh_maintenance_mode_OFF
+
+#=================================================
+# END OF SCRIPT
+#=================================================
+
+ynh_script_progression --message="Restoration completed for $app" --last

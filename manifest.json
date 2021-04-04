@@ -1,0 +1,58 @@
+{
+    "name": "Trilium",
+    "id": "trilium",
+    "packaging_format": 1,
+    "description": {
+        "en": "Trilium Notes is a hierarchical note taking application with focus on building large personal knowledge bases."
+    },
+    "version": "0.46.6~ynh1",
+    "url": "https://github.com/zadam/trilium",
+    "license": "AGPL-3.0-only",
+    "maintainer": {
+        "name": "Maniack Crudelis",
+        "email": "maniackc_dev@crudelis.fr"
+    },
+    "requirements": {
+        "yunohost": ">= 4.1"
+    },
+    "multi_instance": true,
+    "services": [
+        "nginx"
+    ],
+    "arguments": {
+        "install" : [
+            {
+                "name": "domain",
+                "type": "domain",
+                "ask": {
+                    "en": "Choose a domain for Trilium.",
+                    "fr": "Choisissez un domaine pour Trilium."
+                },
+                "example": "domain.org"
+            },
+            {
+                "name": "path",
+                "type": "path",
+                "ask": {
+                    "en": "Choose a path for Trilium",
+                    "fr": "Choisissez un chemin pour Trilium"
+                },
+                "example": "/trilium",
+                "default": "/trilium"
+            },
+            {
+                "name": "is_public",
+                "type": "boolean",
+                "ask": {
+                    "en": "Is it a public website?",
+                    "fr": "Est-ce un site public ?"
+                },
+                "help": {
+                    "en": "If your trilium instance is not public, you won't be able to synchronize with a desktop instance.",
+                    "fr": "Si votre instance trilium n'est pas publique, vous ne pourrez pas synchroniser avec une instance desktop."
+                },
+                "default": true
+            }
+        ]
+    }
+}

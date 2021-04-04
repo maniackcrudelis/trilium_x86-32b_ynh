@@ -1,0 +1,15 @@
+[Unit]
+Description=Trilium.
+After=network.target
+
+[Service]
+Type=simple
+User=__APP__
+Group=__APP__
+Environment=NODE_ENV=production
+Environment=TRILIUM_DATA_DIR=__DATA_DIR__
+ExecStart=__NODE_PATH__/node __FINALPATH__/src/www /var/log/__APP__/trilium.log
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,258 @@
+#!/bin/bash
+
+#=================================================
+# GENERIC STARTING
+#=================================================
+# IMPORT GENERIC HELPERS
+#=================================================
+
+# Load common variables for all scripts.
+source _variables
+
+source _common.sh
+source /usr/share/yunohost/helpers
+
+#=================================================
+# LOAD SETTINGS
+#=================================================
+ynh_script_progression --message="Loading installation settings..." --weight=2
+
+app=$YNH_APP_INSTANCE_NAME
+
+domain=$(ynh_app_setting_get --app=$app --key=domain)
+path_url=$(ynh_app_setting_get --app=$app --key=path)
+is_public=$(ynh_app_setting_get --app=$app --key=is_public)
+final_path=$(ynh_app_setting_get --app=$app --key=final_path)
+port=$(ynh_app_setting_get --app=$app --key=port)
+data_dir=$(ynh_app_setting_get --app=$app --key=data_dir)
+overwrite_settings=$(ynh_app_setting_get --app=$app --key=overwrite_settings)
+overwrite_nginx=$(ynh_app_setting_get --app=$app --key=overwrite_nginx)
+overwrite_systemd=$(ynh_app_setting_get --app=$app --key=overwrite_systemd)
+
+#=================================================
+# CHECK VERSION
+#=================================================
+
+upgrade_type=$(ynh_check_app_version_changed)
+
+#=================================================
+# ENSURE DOWNWARD COMPATIBILITY
+#=================================================
+
+#=================================================
+# BACKUP BEFORE UPGRADE THEN ACTIVE TRAP
+#=================================================
+ynh_script_progression --message="Backing up the app before upgrading (may take a while)..." --weight=36
+
+# Backup the current version of the app
+ynh_backup_before_upgrade
+ynh_clean_setup () {
+# Clean installation remainings that are not handled by the remove script.
+    ynh_clean_check_starting
+
+    # Restore it if the upgrade fails
+    ynh_restore_upgradebackup
+}
+# Exit if an error occurs during the execution of the script
+ynh_abort_if_errors
+
+#=================================================
+# ACTIVATE MAINTENANCE MODE
+#=================================================
+ynh_script_progression --message="Activating maintenance mode..."
+
+ynh_maintenance_mode_ON
+
+#=================================================
+# STOP TRILIUM
+#=================================================
+ynh_script_progression --message="Stopping Trilium service..." --weight=70
+
+ynh_systemd_action --action=stop
+
+#=================================================
+# STANDARD UPGRADE STEPS
+#=================================================
+# DOWNLOAD, CHECK AND UNPACK SOURCE
+#=================================================
+
+if [ "$upgrade_type" == "UPGRADE_APP" ]
+then
+    ynh_script_progression --message="Upgrading source files..." --weight=4
+
+    # Download, check integrity, uncompress and patch the source from app.src
+    ynh_setup_source --dest_dir="$final_path"
+fi
+
+#=================================================
+# UPGRADE DEPENDENCIES
+#=================================================
+ynh_script_progression --message="Upgrading dependencies..." --weight=8
+
+ynh_install_app_dependencies $app_depencencies
+
+#=================================================
+# NGINX CONFIGURATION
+#=================================================
+ynh_script_progression --message="Upgrading nginx web server configuration..." --weight=3
+
+# Overwrite the nginx configuration only if it's allowed
+if [ $overwrite_nginx -eq 1 ]
+then
+    ynh_add_nginx_config
+fi
+
+#=================================================
+# UPGRADE NODEJS
+#=================================================
+ynh_script_progression --message="Upgrading NodeJS..." --weight=10
+
+if [ "$(ynh_detect_arch)" == "i386" ]
+then
+    #Install nodejs 10 from https://unofficial-builds.nodejs.org/ as nodejs does not support 32 bits anymore...
+    ynh_setup_source --source_id=node32b --dest_dir="$final_path/node_bin"
+    nodejs_path="$final_path/node_bin/bin"
+else
+    # Use regular nodejs installation
+    ynh_install_nodejs --nodejs_version=$nodejs_version
+fi
+
+#=================================================
+# UPGRADE NPM MODULES
+#=================================================
+ynh_script_progression --message="Upgrading Trilium npm modules..." --weight=9
+
+# Update the main modules of trilium
+chown -R $app: $final_path
+(cd "$final_path"
+ynh_exec_warn_less ynh_exec_as $app PATH="$nodejs_path:$PATH" "$nodejs_path/npm" cache clean --force
+ynh_exec_warn_less ynh_exec_as $app PATH="$nodejs_path:$PATH" "$nodejs_path/npm" update)
+
+#=================================================
+# SPECIFIC UPGRADE
+#=================================================
+# CONFIGURE TRILIUM
+#=================================================
+
+if [ "$upgrade_type" == "UPGRADE_APP" ]
+then
+    ynh_script_progression --message="Reconfiguring Trilium..." --weight=2
+
+    # Overwrite the settings config file only if it's allowed
+    if [ $overwrite_settings -eq 1 ]
+    then
+        # Verify the checksum of a file, stored by `ynh_store_file_checksum` in the install script.
+        ynh_backup_if_checksum_is_different --file="$data_dir/config.ini"
+
+        cp ../conf/config.ini $data_dir/config.ini
+
+        ynh_replace_string --match_string="__PORT__" --replace_string="$port" --target_file="$data_dir/config.ini"
+
+        # Recalculate and store the checksum of the file for the next upgrade.
+        ynh_store_file_checksum --file="$data_dir/config.ini"
+    fi
+fi
+
+#=================================================
+# CREATE DEDICATED USER
+#=================================================
+ynh_script_progression --message="Making sure dedicated system user exists..."
+
+# Create a dedicated user (if not existing)
+ynh_system_user_create --username=$app --home_dir=$final_path
+
+#=================================================
+# SECURING FILES AND DIRECTORIES
+#=================================================
+
+# Set files ownership to Trilium
+chown -R $app: $final_path
+chown -R $app: $data_dir
+
+#=================================================
+# UPGRADE FAIL2BAN
+#=================================================
+# ynh_script_progression --message="Reconfiguring fail2ban..." --weight=8 --time
+
+# Create a dedicated fail2ban config
+# ynh_add_fail2ban_config --logpath="/var/log/nginx/$domain-access.log" --failregex="<HOST> .* .POST /mypads/api/auth/login HTTP/1.1. 400" --max_retry=5
+
+#=================================================
+# SETUP SYSTEMD
+#=================================================
+ynh_script_progression --message="Upgrading systemd configuration..." --weight=2
+
+# Overwrite the systemd configuration only if it's allowed
+if [ $overwrite_systemd -eq 1 ]
+then
+    ynh_replace_string --match_string="__NODE_PATH__" --replace_string="$nodejs_path" --target_file="../conf/systemd.service"
+    ynh_replace_string --match_string="__DATA_DIR__" --replace_string="$data_dir" --target_file="../conf/systemd.service"
+    ynh_add_systemd_config
+fi
+
+#=================================================
+# SETUP SSOWAT
+#=================================================
+ynh_script_progression --message="Configuring SSOwat..." --weight=2
+
+if [ $is_public -eq 1 ]; then
+    ynh_app_setting_set --app=$app --key=skipped_uris --value="/"
+fi
+
+#=================================================
+# RELOAD NGINX
+#=================================================
+ynh_script_progression --message="Reloading nginx web server..."
+
+ynh_systemd_action --action=reload --service_name=nginx
+
+#=================================================
+# CHECK TRILIUM STARTING
+#=================================================
+ynh_script_progression --message="Restarting Trilium..." --weight=4
+
+log_file="$data_dir/log/trilium-$(date '+%F').log"
+# Wait for trilium to be fully started
+ynh_systemd_action --action=restart --line_match="Listening on port" --log_path="$log_file" --timeout="300"
+
+#=================================================
+# DEACTIVE MAINTENANCE MODE
+#=================================================
+ynh_script_progression --message="Disabling maintenance mode..." --weight=5
+
+ynh_maintenance_mode_OFF
+
+#=================================================
+# SEND A README FOR THE ADMIN
+#=================================================
+
+# Get main domain and buid the url of the admin panel of the app.
+admin_panel="https://$(grep portal_domain /etc/ssowat/conf.json | cut -d'"' -f4)/yunohost/admin/#/apps/$app"
+
+# Build the changelog
+# Get the value of admin_mail_html
+admin_mail_html=$(ynh_app_setting_get $app admin_mail_html)
+admin_mail_html="${admin_mail_html:-0}"
+# If a html email is required. Apply html to the changelog.
+if [ "$admin_mail_html" -eq 1 ]; then
+    format=html
+else
+    format=plain
+fi
+ynh_app_changelog --format=$format
+
+echo "You can configure this app easily by using the experimental config-panel feature $admin_panel/config-panel.
+You can also find some specific actions for this app by using the experimental action feature $admin_panel/actions.
+
+---
+
+Changelog since your last upgrade:
+$(cat changelog)" > mail_to_send
+
+ynh_send_readme_to_admin --app_message="mail_to_send" --recipients="root" --type=upgrade
+
+#=================================================
+# END OF SCRIPT
+#=================================================
+
+ynh_script_progression --message="Upgrade of $app completed" --last
