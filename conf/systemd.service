@@ -8,8 +8,12 @@ User=__APP__
 Group=__APP__
 Environment=NODE_ENV=production
 Environment=TRILIUM_DATA_DIR=__DATA_DIR__
-ExecStart=__NODE_PATH__/node __FINALPATH__/src/www /var/log/__APP__/trilium.log
+ExecStart=__NODE_PATH__/node __FINALPATH__/src/www
 Restart=always
+
+# Handle properly ExecStop by sending SIGINT to the main process.
+KillMode=mixed
+KillSignal=SIGINT
 
 [Install]
 WantedBy=multi-user.target
