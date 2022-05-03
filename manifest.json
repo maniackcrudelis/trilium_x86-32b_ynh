@@ -5,7 +5,7 @@
     "description": {
         "en": "Trilium Notes is a hierarchical note taking application with focus on building large personal knowledge bases."
     },
-    "version": "0.46.7~ynh1",
+    "version": "0.51.2~ynh1",
     "url": "https://github.com/zadam/trilium",
     "license": "AGPL-3.0-only",
     "maintainer": {

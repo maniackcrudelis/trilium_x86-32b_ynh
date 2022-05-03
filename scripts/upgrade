@@ -109,7 +109,7 @@ ynh_script_progression --message="Upgrading NodeJS..." --weight=10
 
 if [ "$(ynh_detect_arch)" == "i386" ]
 then
-    #Install nodejs 10 from https://unofficial-builds.nodejs.org/ as nodejs does not support 32 bits anymore...
+    #Install nodejs 14 from https://unofficial-builds.nodejs.org/ as nodejs does not support 32 bits anymore...
     ynh_setup_source --source_id=node32b --dest_dir="$final_path/node_bin"
     nodejs_path="$final_path/node_bin/bin"
 else

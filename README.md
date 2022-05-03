@@ -1,12 +1,15 @@
 # Trilium for YunoHost
 
+## **This version is especially intented to supply a working version for x86-32b architectures.**
+
 > *This package allow you to install etherpad quickly and simply on a YunoHost server.  
 If you don't have YunoHost, please see [here](https://yunohost.org/#/install) to know how to install and enjoy it.*
 
 ## Overview
 Trilium Notes is a hierarchical note taking application with focus on building large personal knowledge bases.
 
-**Shipped version:** 0.46.7
+**Shipped version:** 0.51.2
+
 
 ## Screenshots
 
@@ -32,7 +35,7 @@ Not supported but multi-instance available.
 
 #### Supported architectures
 
-* Works on x86-64b and x86-32b with an [unofficial build](https://unofficial-builds.nodejs.org/) of nodejs 10.
+* Works on x86-64b and x86-32b with an [unofficial build](https://unofficial-builds.nodejs.org/) of nodejs 14.
 * Not tested on ARM. 
 
 ## Limitations
