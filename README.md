@@ -2,13 +2,13 @@
 
 ## **This version is especially intented to supply a working version for x86-32b architectures.**
 
-> *This package allow you to install etherpad quickly and simply on a YunoHost server.  
+> *This package allow you to install trilium quickly and simply on a YunoHost server.  
 If you don't have YunoHost, please see [here](https://yunohost.org/#/install) to know how to install and enjoy it.*
 
 ## Overview
 Trilium Notes is a hierarchical note taking application with focus on building large personal knowledge bases.
 
-**Shipped version:** 0.51.2
+**Shipped version:** 0.56.2
 
 
 ## Screenshots
@@ -39,9 +39,6 @@ Not supported but multi-instance available.
 * Not tested on ARM. 
 
 ## Limitations
-
-Synchronization doesn't work using domain/path [because of an error with the SSO](https://github.com/YunoHost/issues/issues/1768).
-To synchronize with a desktop local app, use instead IP:PORT to bypass the SSO.
 
 ## Additionnal informations
 
